@@ -1,20 +1,17 @@
-"""Classification components
-"""
-
 import torch
 import torch.nn as nn
+from models.vgg11 import VGG11
+class ClassificationModel(nn.Module):
 
-
-class VGG11Classifier(nn.Module):
-    """Full classifier = VGG11Encoder + ClassificationHead."""
-
-    def __init__(self, num_classes: int = 37, in_channels: int = 3, dropout_p: float = 0.5):
-        pass
+    def __init__(self, num_classes: int = 37, dropout_p: float = 0.5):
+        super().__init__()
+        self.vgg = VGG11(num_classes=num_classes, dropout_p=dropout_p)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass for classification model.
-        Returns:
-            Classification logits [B, num_classes].
-        """
-        # TODO: Implement forward pass.
-        raise NotImplementedError("Implement VGG11Classifier.forward")
+        return self.vgg(x)
+
+    def get_backbone(self) -> nn.Sequential:
+        return self.vgg.get_backbone()
+
+    def get_avgpool(self) -> nn.Module:
+        return self.vgg.avgpool
