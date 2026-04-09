@@ -7,17 +7,20 @@ import torchvision.datasets as tvd
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-
 def get_train_transform(img_size: int = 224) -> A.Compose:
     return A.Compose(
         [
-            A.Resize(img_size, img_size),
+            A.RandomResizedCrop(height=img_size, width=img_size, scale=(0.7, 1.0)),
             A.HorizontalFlip(p=0.5),
-            A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, p=0.4),
+            A.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1, p=0.6),
+            A.Rotate(limit=15, p=0.4),
+            A.GaussianBlur(blur_limit=(3, 5), p=0.2),
+            A.CoarseDropout(max_holes=4, max_height=32, max_width=32, p=0.3),
             A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ToTensorV2(),
         ],
-        bbox_params=A.BboxParams(format="coco", label_fields=["class_labels"], min_visibility=0.0),
+        bbox_params=A.BboxParams(format="coco", label_fields=["class_labels"],
+                                  min_visibility=0.2),
     )
 
 
@@ -28,9 +31,16 @@ def get_val_transform(img_size: int = 224) -> A.Compose:
             A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ToTensorV2(),
         ],
-        bbox_params=A.BboxParams(format="coco", label_fields=["class_labels"], min_visibility=0.0),
+        bbox_params=A.BboxParams(format="coco", label_fields=["class_labels"],
+                                  min_visibility=0.0),
     )
+
 class PetsDataset(Dataset):
+    """
+    Oxford-IIIT Pet dataset wrapper.
+    Auto-downloads via torchvision on first use.
+    """
+
     CLASSES = [
         "Abyssinian", "Bengal", "Birman", "Bombay", "British_Shorthair",
         "Egyptian_Mau", "Maine_Coon", "Persian", "Ragdoll", "Russian_Blue",
@@ -54,6 +64,7 @@ class PetsDataset(Dataset):
         self.task      = task
         self.img_size  = img_size
         self.transform = transform or get_val_transform(img_size)
+
         tv_split = "test" if split == "test" else "trainval"
         self._base = tvd.OxfordIIITPet(
             root=root,
@@ -68,6 +79,7 @@ class PetsDataset(Dataset):
             self.indices = indices[:cut] if split == "train" else indices[cut:]
         else:
             self.indices = indices
+
         self.bbox_dir = os.path.join(root, "oxford-iiit-pet", "annotations", "xmls")
 
     def _load_bbox(self, name: str):
@@ -95,7 +107,6 @@ class PetsDataset(Dataset):
 
         img_path = self._base._images[real_idx]
         name = os.path.splitext(os.path.basename(img_path))[0]
-
         image = np.array(pil_img.convert("RGB"))
 
         mask = None
@@ -117,7 +128,6 @@ class PetsDataset(Dataset):
         if mask is not None:
             aug = self.transform(image=image, mask=mask, bboxes=bboxes, class_labels=bbox_labels)
             raw_mask = aug["mask"]
-            
             if isinstance(raw_mask, torch.Tensor):
                 mask_t = raw_mask.long()
             else:
@@ -125,16 +135,16 @@ class PetsDataset(Dataset):
         else:
             aug = self.transform(image=image, bboxes=bboxes, class_labels=bbox_labels)
             mask_t = torch.zeros(self.img_size, self.img_size, dtype=torch.long)
- 
+
         image_t = aug["image"]
         label_t = torch.tensor(int(label), dtype=torch.long)
- 
+
         if aug["bboxes"]:
             x1, y1, bw, bh = aug["bboxes"][0]
             bbox_t = torch.tensor([x1 + bw / 2, y1 + bh / 2, bw, bh], dtype=torch.float32)
         else:
             bbox_t = torch.zeros(4, dtype=torch.float32)
- 
+
         return {
             "image": image_t,
             "label": label_t,
