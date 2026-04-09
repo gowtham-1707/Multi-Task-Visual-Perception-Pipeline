@@ -10,7 +10,7 @@ from albumentations.pytorch import ToTensorV2
 def get_train_transform(img_size: int = 224) -> A.Compose:
     return A.Compose(
         [
-            A.RandomResizedCrop(height=img_size, width=img_size, scale=(0.7, 1.0)),
+            A.RandomResizedCrop(size=(img_size, img_size), scale=(0.7, 1.0)),
             A.HorizontalFlip(p=0.5),
             A.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1, p=0.6),
             A.Rotate(limit=15, p=0.4),
@@ -34,13 +34,7 @@ def get_val_transform(img_size: int = 224) -> A.Compose:
         bbox_params=A.BboxParams(format="coco", label_fields=["class_labels"],
                                   min_visibility=0.0),
     )
-
 class PetsDataset(Dataset):
-    """
-    Oxford-IIIT Pet dataset wrapper.
-    Auto-downloads via torchvision on first use.
-    """
-
     CLASSES = [
         "Abyssinian", "Bengal", "Birman", "Bombay", "British_Shorthair",
         "Egyptian_Mau", "Maine_Coon", "Persian", "Ragdoll", "Russian_Blue",
