@@ -7,15 +7,20 @@ import torchvision.datasets as tvd
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
+
 def get_train_transform(img_size: int = 224) -> A.Compose:
     return A.Compose(
         [
-            A.RandomResizedCrop(size=(img_size, img_size), scale=(0.7, 1.0)),
+            A.RandomResizedCrop(size=(img_size, img_size), scale=(0.6, 1.0)),
             A.HorizontalFlip(p=0.5),
-            A.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1, p=0.6),
-            A.Rotate(limit=15, p=0.4),
-            A.GaussianBlur(blur_limit=(3, 5), p=0.2),
-            A.CoarseDropout(num_holes_range=(1, 4), hole_height_range=(16, 32), hole_width_range=(16, 32), p=0.3),
+            A.VerticalFlip(p=0.1),
+            A.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=0.7),
+            A.Rotate(limit=20, p=0.5),
+            A.GaussianBlur(blur_limit=(3, 7), p=0.3),
+            A.GaussNoise(p=0.2),
+            A.CoarseDropout(num_holes_range=(1, 6),
+                            hole_height_range=(20, 40),
+                            hole_width_range=(20, 40), p=0.3),
             A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ToTensorV2(),
         ],
@@ -35,12 +40,8 @@ def get_val_transform(img_size: int = 224) -> A.Compose:
                                   min_visibility=0.0),
     )
 
-class PetsDataset(Dataset):
-    """
-    Oxford-IIIT Pet dataset wrapper.
-    Auto-downloads via torchvision on first use.
-    """
 
+class PetsDataset(Dataset):
     CLASSES = [
         "Abyssinian", "Bengal", "Birman", "Bombay", "British_Shorthair",
         "Egyptian_Mau", "Maine_Coon", "Persian", "Ragdoll", "Russian_Blue",
@@ -53,24 +54,16 @@ class PetsDataset(Dataset):
         "wheaten_terrier", "yorkshire_terrier",
     ]
 
-    def __init__(
-        self,
-        root: str = "data/pets",
-        split: str = "train",
-        task: str = "all",
-        transform=None,
-        img_size: int = 224,
-    ):
+    def __init__(self, root="data/pets", split="train", task="all",
+                 transform=None, img_size=224):
         self.task      = task
         self.img_size  = img_size
         self.transform = transform or get_val_transform(img_size)
 
-        tv_split = "test" if split == "test" else "trainval"
+        tv_split   = "test" if split == "test" else "trainval"
         self._base = tvd.OxfordIIITPet(
-            root=root,
-            split=tv_split,
-            target_types=["category", "segmentation"],
-            download=True,
+            root=root, split=tv_split,
+            target_types=["category", "segmentation"], download=True,
         )
 
         indices = list(range(len(self._base)))
@@ -82,7 +75,7 @@ class PetsDataset(Dataset):
 
         self.bbox_dir = os.path.join(root, "oxford-iiit-pet", "annotations", "xmls")
 
-    def _load_bbox(self, name: str):
+    def _load_bbox(self, name):
         import xml.etree.ElementTree as ET
         xml_path = os.path.join(self.bbox_dir, f"{name}.xml")
         if not os.path.exists(xml_path):
@@ -94,19 +87,19 @@ class PetsDataset(Dataset):
             ymin = float(obj.find("ymin").text)
             xmax = float(obj.find("xmax").text)
             ymax = float(obj.find("ymax").text)
-            return [(xmin + xmax) / 2, (ymin + ymax) / 2, xmax - xmin, ymax - ymin]
+            return [(xmin+xmax)/2, (ymin+ymax)/2, xmax-xmin, ymax-ymin]
         except Exception:
             return None
 
-    def __len__(self) -> int:
+    def __len__(self):
         return len(self.indices)
 
-    def __getitem__(self, idx: int) -> dict:
+    def __getitem__(self, idx):
         real_idx = self.indices[idx]
         pil_img, (label, pil_mask) = self._base[real_idx]
 
         img_path = self._base._images[real_idx]
-        name = os.path.splitext(os.path.basename(img_path))[0]
+        name  = os.path.splitext(os.path.basename(img_path))[0]
         image = np.array(pil_img.convert("RGB"))
 
         mask = None
@@ -117,38 +110,31 @@ class PetsDataset(Dataset):
         bboxes, bbox_labels = [], [int(label)]
         if bbox_raw is not None:
             cx, cy, bw, bh = bbox_raw
-            orig_h, orig_w = image.shape[:2]
-            x1 = max(0.0, cx - bw / 2)
-            y1 = max(0.0, cy - bh / 2)
+            orig_h, orig_w  = image.shape[:2]
+            x1 = max(0.0, cx - bw/2)
+            y1 = max(0.0, cy - bh/2)
             bw = min(bw, orig_w - x1)
             bh = min(bh, orig_h - y1)
             if bw > 1 and bh > 1:
                 bboxes = [[x1, y1, bw, bh]]
 
         if mask is not None:
-            aug = self.transform(image=image, mask=mask, bboxes=bboxes, class_labels=bbox_labels)
-            raw_mask = aug["mask"]
-            if isinstance(raw_mask, torch.Tensor):
-                mask_t = raw_mask.long()
-            else:
-                mask_t = torch.from_numpy(np.array(raw_mask, dtype=np.int64))
+            aug    = self.transform(image=image, mask=mask,
+                                    bboxes=bboxes, class_labels=bbox_labels)
+            raw    = aug["mask"]
+            mask_t = raw.long() if isinstance(raw, torch.Tensor) \
+                     else torch.from_numpy(np.array(raw, dtype=np.int64))
         else:
-            aug = self.transform(image=image, bboxes=bboxes, class_labels=bbox_labels)
+            aug    = self.transform(image=image, bboxes=bboxes, class_labels=bbox_labels)
             mask_t = torch.zeros(self.img_size, self.img_size, dtype=torch.long)
 
-        image_t = aug["image"]
         label_t = torch.tensor(int(label), dtype=torch.long)
 
         if aug["bboxes"]:
             x1, y1, bw, bh = aug["bboxes"][0]
-            bbox_t = torch.tensor([x1 + bw / 2, y1 + bh / 2, bw, bh], dtype=torch.float32)
+            bbox_t = torch.tensor([x1+bw/2, y1+bh/2, bw, bh], dtype=torch.float32)
         else:
             bbox_t = torch.zeros(4, dtype=torch.float32)
 
-        return {
-            "image": image_t,
-            "label": label_t,
-            "bbox":  bbox_t,
-            "mask":  mask_t,
-            "name":  name,
-        }
+        return {"image": aug["image"], "label": label_t,
+                "bbox": bbox_t, "mask": mask_t, "name": name}
