@@ -15,7 +15,7 @@ def get_train_transform(img_size: int = 224) -> A.Compose:
             A.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1, p=0.6),
             A.Rotate(limit=15, p=0.4),
             A.GaussianBlur(blur_limit=(3, 5), p=0.2),
-            A.CoarseDropout(max_holes=4, max_height=32, max_width=32, p=0.3),
+            A.CoarseDropout(num_holes_range=(1, 4), hole_height_range=(16, 32), hole_width_range=(16, 32), p=0.3),
             A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ToTensorV2(),
         ],
@@ -34,7 +34,13 @@ def get_val_transform(img_size: int = 224) -> A.Compose:
         bbox_params=A.BboxParams(format="coco", label_fields=["class_labels"],
                                   min_visibility=0.0),
     )
+
 class PetsDataset(Dataset):
+    """
+    Oxford-IIIT Pet dataset wrapper.
+    Auto-downloads via torchvision on first use.
+    """
+
     CLASSES = [
         "Abyssinian", "Bengal", "Birman", "Bombay", "British_Shorthair",
         "Egyptian_Mau", "Maine_Coon", "Persian", "Ragdoll", "Russian_Blue",
