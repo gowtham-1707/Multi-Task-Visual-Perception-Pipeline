@@ -3,8 +3,7 @@ import torch.nn as nn
 from models.layers import CustomDropout
 
 VGG11_CONFIG = [64, "M", 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"]
- 
- 
+
 def make_conv_layers(cfg: list, batch_norm: bool = True) -> nn.Sequential:
     layers = []
     in_channels = 3
@@ -17,22 +16,21 @@ def make_conv_layers(cfg: list, batch_norm: bool = True) -> nn.Sequential:
                 layers.append(nn.BatchNorm2d(v))
             layers.append(nn.ReLU(inplace=True))
             in_channels = v
-    return nn.Sequential(*layers)
- 
- 
+    return nn.Sequential(*layers) 
 class VGG11(nn.Module):
-    def __init__(self, num_classes: int = 37, dropout_p: float = 0.5, batch_norm: bool = True):
+
+    def __init__(self, num_classes: int = 37, dropout_p: float = 0.4, batch_norm: bool = True):
         super().__init__()
-        self.features = make_conv_layers(VGG11_CONFIG, batch_norm=batch_norm)
-        self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
+        self.features  = make_conv_layers(VGG11_CONFIG, batch_norm=batch_norm)
+        self.avgpool   = nn.AdaptiveAvgPool2d((7, 7))
         self.classifier = nn.Sequential(
-            nn.Linear(512 * 7 * 7, 4096),
+            nn.Linear(512 * 7 * 7, 1024),
             nn.ReLU(inplace=True),
             CustomDropout(p=dropout_p),
-            nn.Linear(4096, 4096),
+            nn.Linear(1024, 512),
             nn.ReLU(inplace=True),
             CustomDropout(p=dropout_p),
-            nn.Linear(4096, num_classes),
+            nn.Linear(512, num_classes),
         )
         self._init_weights()
  
@@ -53,8 +51,7 @@ class VGG11(nn.Module):
         x = self.features(x)
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
-        x = self.classifier(x)
-        return x
+        return self.classifier(x)
  
     def get_backbone(self) -> nn.Sequential:
         return self.features
