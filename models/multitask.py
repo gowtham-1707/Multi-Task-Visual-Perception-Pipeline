@@ -50,7 +50,7 @@ class MultiTaskPerceptionModel(nn.Module):
         self.seg_out = nn.Conv2d(64, num_seg_classes, kernel_size=1)
 
     def init(self):
-        """Download checkpoints from Google Drive and load weights."""
+        
         import gdown
         gdown.download(id="<classifier.pth drive id>", output=classifier_path, quiet=False)
         gdown.download(id="<localizer.pth drive id>",  output=localizer_path,  quiet=False)
@@ -104,9 +104,9 @@ class MultiTaskPerceptionModel(nn.Module):
         for attr, src in src_map.items():
             dst = getattr(self, attr)
             dst.load_state_dict(src.state_dict(), strict=True)
-        # Encoder backbone
+        
         self.seg_encoder.load_state_dict(seg_model.encoder.state_dict(), strict=True)
-        # Also sync shared backbone from seg encoder block weights
+        
         self.seg_encoder.block1.load_state_dict(
             {k: v for k, v in seg_model.encoder.block1.state_dict().items()}, strict=True
         )
@@ -144,4 +144,7 @@ class MultiTaskPerceptionModel(nn.Module):
 
         seg_logits = self._seg_forward(x)
 
-        return cls_logits, bbox, seg_logits
+        return {
+    "classification": cls_logits, 
+    "localization":   bbox,          
+    "segmentation":   seg_logits, }
