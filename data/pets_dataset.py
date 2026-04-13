@@ -7,33 +7,30 @@ import torchvision.datasets as tvd
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
+IMAGE_SIZE = 224
+MEAN = [0.485, 0.456, 0.406]
+STD  = [0.229, 0.224, 0.225]
+
 
 def get_train_transform(img_size: int = 224) -> A.Compose:
     return A.Compose(
         [
-            A.RandomResizedCrop(size=(img_size, img_size), scale=(0.6, 1.0)),
+            A.Resize(height=img_size, width=img_size),
             A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.1),
-            A.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=0.7),
-            A.Rotate(limit=20, p=0.5),
-            A.GaussianBlur(blur_limit=(3, 7), p=0.3),
-            A.GaussNoise(p=0.2),
-            A.CoarseDropout(num_holes_range=(1, 6),
-                            hole_height_range=(20, 40),
-                            hole_width_range=(20, 40), p=0.3),
-            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            A.ColorJitter(p=0.3),
+            A.Normalize(mean=MEAN, std=STD),
             ToTensorV2(),
         ],
         bbox_params=A.BboxParams(format="coco", label_fields=["class_labels"],
-                                  min_visibility=0.2),
+                                  min_visibility=0.3),
     )
 
 
 def get_val_transform(img_size: int = 224) -> A.Compose:
     return A.Compose(
         [
-            A.Resize(img_size, img_size),
-            A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            A.Resize(height=img_size, width=img_size),
+            A.Normalize(mean=MEAN, std=STD),
             ToTensorV2(),
         ],
         bbox_params=A.BboxParams(format="coco", label_fields=["class_labels"],
@@ -42,6 +39,8 @@ def get_val_transform(img_size: int = 224) -> A.Compose:
 
 
 class PetsDataset(Dataset):
+    """Oxford-IIIT Pet dataset. Auto-downloads via torchvision."""
+
     CLASSES = [
         "Abyssinian", "Bengal", "Birman", "Bombay", "British_Shorthair",
         "Egyptian_Mau", "Maine_Coon", "Persian", "Ragdoll", "Russian_Blue",
@@ -125,7 +124,8 @@ class PetsDataset(Dataset):
             mask_t = raw.long() if isinstance(raw, torch.Tensor) \
                      else torch.from_numpy(np.array(raw, dtype=np.int64))
         else:
-            aug    = self.transform(image=image, bboxes=bboxes, class_labels=bbox_labels)
+            aug    = self.transform(image=image, bboxes=bboxes,
+                                    class_labels=bbox_labels)
             mask_t = torch.zeros(self.img_size, self.img_size, dtype=torch.long)
 
         label_t = torch.tensor(int(label), dtype=torch.long)

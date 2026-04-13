@@ -18,19 +18,16 @@ def dice_coefficient(pred_logits, target, smooth=1e-6):
     probs   = torch.softmax(pred_logits, dim=1)
     one_hot = torch.zeros_like(probs).scatter_(1, target.unsqueeze(1), 1)
     dims = (0, 2, 3)
-    intersection = (probs * one_hot).sum(dims)
-    cardinality  = (probs + one_hot).sum(dims)
-    return (2.0 * intersection + smooth) / (cardinality + smooth)
+    inter = (probs * one_hot).sum(dims)
+    card  = (probs + one_hot).sum(dims)
+    return (2.0 * inter + smooth) / (card + smooth)
 
 def seg_loss(pred, target):
-    return nn.CrossEntropyLoss()(pred, target) + (1.0 - dice_coefficient(pred, target).mean())
+    return nn.CrossEntropyLoss()(pred, target) + \
+           (1.0 - dice_coefficient(pred, target).mean())
 
 def loc_loss(pred, target):
     return nn.MSELoss()(pred, target) + IoULoss()(pred, target)
-
-def cls_loss(pred, target, label_smoothing=0.1):
-    # Label smoothing reduces overconfidence — better F1 on unseen data
-    return nn.CrossEntropyLoss(label_smoothing=label_smoothing)(pred, target)
 
 def macro_f1(logits, labels, num_classes=37):
     preds  = logits.argmax(1)
@@ -41,12 +38,13 @@ def macro_f1(logits, labels, num_classes=37):
         fp    = ((preds == c) & (labels != c)).sum().float()
         fn    = ((preds != c) & (labels == c)).sum().float()
         denom = 2 * tp + fp + fn
-        f1s.append((2 * tp / denom) if denom > 0 else torch.tensor(0.0, device=device))
+        f1s.append((2 * tp / denom) if denom > 0
+                   else torch.tensor(0.0, device=device))
     return torch.stack(f1s).mean().item()
 
 TASK_FNS = {
     "classify": (
-        lambda out, b: cls_loss(out, b["label"]),
+        lambda out, b: nn.CrossEntropyLoss()(out, b["label"]),
         lambda out, b: macro_f1(out, b["label"]),
     ),
     "localize": (
@@ -93,14 +91,14 @@ def build_model(task, device, classifier_ckpt=None):
     if task == "classify":
         return ClassificationModel().to(device)
 
-    model  = LocalizationModel(freeze_early=True).to(device) if task == "localize" \
-             else SegmentationModel().to(device)
-    loader = model.load_backbone_from_classifier if task == "localize" \
-             else model.load_encoder_from_classifier
+    model  = LocalizationModel(freeze_early=True).to(device) \
+             if task == "localize" else SegmentationModel().to(device)
+    loader = model.load_backbone_from_classifier \
+             if task == "localize" else model.load_encoder_from_classifier
 
     if ckpt_exists:
         loader(classifier_ckpt, device)
-        print(f"  Loaded pretrained weights from {classifier_ckpt}")
+        print(f"  Loaded weights from {classifier_ckpt}")
     return model
 
 
@@ -109,11 +107,12 @@ def main():
     parser.add_argument("--task",            type=str,   default="classify",
                         choices=["classify", "localize", "segment"])
     parser.add_argument("--data_root",       type=str,   default="data/pets")
-    parser.add_argument("--epochs",          type=int,   default=30)
-    parser.add_argument("--lr",              type=float, default=1e-3)
+    parser.add_argument("--epochs",          type=int,   default=50)
+    parser.add_argument("--lr",              type=float, default=1e-4)
     parser.add_argument("--batch",           type=int,   default=32)
     parser.add_argument("--img_size",        type=int,   default=224)
     parser.add_argument("--weight_decay",    type=float, default=1e-4)
+    parser.add_argument("--dropout_p",       type=float, default=0.5)
     parser.add_argument("--classifier_ckpt", type=str,
                         default="checkpoints/classifier.pth")
     parser.add_argument("--wandb_project",   type=str,
@@ -130,35 +129,34 @@ def main():
 
     train_ds = PetsDataset(args.data_root, "train", "all",
                            get_train_transform(args.img_size), args.img_size)
-    val_ds   = PetsDataset(args.data_root, "val",   "all",
-                           get_val_transform(args.img_size),   args.img_size)
+    val_ds   = PetsDataset(args.data_root, "val", "all",
+                           get_val_transform(args.img_size), args.img_size)
 
     loader_kw    = dict(num_workers=num_workers, pin_memory=(device == "cuda"))
-    train_loader = DataLoader(train_ds, batch_size=args.batch, shuffle=True,  **loader_kw)
-    val_loader   = DataLoader(val_ds,   batch_size=args.batch, shuffle=False, **loader_kw)
+    train_loader = DataLoader(train_ds, batch_size=args.batch,
+                              shuffle=True,  **loader_kw)
+    val_loader   = DataLoader(val_ds,   batch_size=args.batch,
+                              shuffle=False, **loader_kw)
 
     model     = build_model(args.task, device, args.classifier_ckpt)
-    optimizer = optim.AdamW(
+
+    # Adam + StepLR matching notebook defaults
+    optimizer = optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr, weight_decay=args.weight_decay,
     )
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
-    def lr_lambda(epoch):
-        warmup = 5
-        if epoch < warmup:
-            return (epoch + 1) / warmup
-        progress = (epoch - warmup) / max(1, args.epochs - warmup)
-        return 0.5 * (1.0 + torch.cos(torch.tensor(3.14159 * progress)).item())
-
-    scheduler   = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     task_to_name = {"classify": "classifier", "localize": "localizer", "segment": "unet"}
     ckpt_path    = f"checkpoints/{task_to_name[args.task]}.pth"
     metric_name  = {"classify": "F1", "localize": "IoU", "segment": "dice"}[args.task]
     best_val     = -1.0
 
     for epoch in range(1, args.epochs + 1):
-        tr_loss, tr_m  = run_epoch(model, train_loader, optimizer, device, args.task, True)
-        val_loss, val_m = run_epoch(model, val_loader,  optimizer, device, args.task, False)
+        tr_loss,  tr_m  = run_epoch(model, train_loader, optimizer,
+                                    device, args.task, True)
+        val_loss, val_m = run_epoch(model, val_loader,   optimizer,
+                                    device, args.task, False)
         scheduler.step()
 
         lr_now = optimizer.param_groups[0]["lr"]
@@ -176,7 +174,7 @@ def main():
             best_val = val_m
             torch.save({"model_state_dict": model.state_dict(),
                         "epoch": epoch}, ckpt_path)
-            print(f"checkpoint saved (val {metric_name}={val_m:.4f})")
+            print(f"  ✓ checkpoint saved (val {metric_name}={val_m:.4f})")
 
     wandb.finish()
     print(f"\nDone. Best val {metric_name}: {best_val:.4f}")
