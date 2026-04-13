@@ -139,8 +139,6 @@ def main():
                               shuffle=False, **loader_kw)
 
     model     = build_model(args.task, device, args.classifier_ckpt)
-
-    # Adam + StepLR matching notebook defaults
     optimizer = optim.Adam(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=args.lr, weight_decay=args.weight_decay,
@@ -174,7 +172,7 @@ def main():
             best_val = val_m
             torch.save({"model_state_dict": model.state_dict(),
                         "epoch": epoch}, ckpt_path)
-            print(f"  ✓ checkpoint saved (val {metric_name}={val_m:.4f})")
+            print(f" checkpoint saved (val {metric_name}={val_m:.4f})")
 
     wandb.finish()
     print(f"\nDone. Best val {metric_name}: {best_val:.4f}")
