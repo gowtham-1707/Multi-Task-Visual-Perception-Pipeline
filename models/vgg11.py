@@ -6,11 +6,6 @@ from .layers import CustomDropout
 
 
 class VGG11Encoder(nn.Module):
-    """
-    VGG11 convolutional backbone per Simonyan & Zisserman (2014).
-    BatchNorm is inserted after every Conv2d activation.
-    The encoder exposes intermediate feature maps for U-Net skip connections.
-    """
     def __init__(self, in_channels: int = 3):
         super().__init__()
 
@@ -48,7 +43,6 @@ class VGG11Encoder(nn.Module):
 
     @property
     def last_conv(self):
-        """Returns the last Conv2d in block5 for hook registration."""
         return self.block5[1][0]
 
     def forward(self, x, return_features=False):

@@ -38,8 +38,6 @@ def dice_score(pred_mask, true_mask, num_classes=3, eps=1e-6):
         scores.append((2*(p*t).sum()+eps)/(p.sum()+t.sum()+eps))
     return torch.stack(scores).mean().item()
 
-# ... (full implementations of train_classifier, train_localizer, train_unet are in the notebook)
-
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", type=str, required=True, choices=["classify","localize","segment"])

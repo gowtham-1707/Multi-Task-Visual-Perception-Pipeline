@@ -21,10 +21,7 @@ def double_conv(in_c, out_c):
 
 
 class MultiTaskPerceptionModel(nn.Module):
-    """
-    Shared VGG11 backbone with three task heads:
-    classification, localization, and segmentation.
-    """
+    
     def __init__(
         self,
         num_breeds: int = 37,
@@ -32,9 +29,9 @@ class MultiTaskPerceptionModel(nn.Module):
         in_channels: int = 3,
         image_size: float = 224.0,
         dropout_p: float = 0.5,
-        classifier_path: str = "checkpoints/classifier.pth",
-        localizer_path: str = "checkpoints/localizer.pth",
-        unet_path: str = "checkpoints/unet.pth",
+        classifier_path: str = "1CACv7TeUxX5kmeSdQzmV8z5UolojimMw",
+        localizer_path: str = "1Yx2RCOTdnDJm0hEzlEZgx31sazQWogQn",
+        unet_path: str = "1Dn9C_Gn0XHmulrpT_cXTkOp_cX1MmutX",
     ):
         super().__init__()
         self.backbone     = VGG11Encoder(in_channels=in_channels)

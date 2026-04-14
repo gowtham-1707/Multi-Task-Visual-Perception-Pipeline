@@ -17,10 +17,7 @@ def double_conv(in_c, out_c):
 
 
 class VGG11UNet(nn.Module):
-    """
-    U-Net with VGG11 encoder. Decoder uses transposed convolutions (no bilinear).
-    Skip connections fuse encoder block outputs with decoder feature maps.
-    """
+    
     def __init__(self, num_classes: int = 3, in_channels: int = 3, dropout_p: float = 0.5):
         super().__init__()
         self.encoder = VGG11Encoder(in_channels=in_channels)
